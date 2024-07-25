@@ -4,18 +4,25 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "format": "prettier-eslint",
+    "dev": "pnpm run --recursive --if-present dev",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "type": "module",
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@eslint/js": "^9.7.0",
     "@types/node": "^20.14.12",
     "chokidar": "^3.6.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.35.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "globals": "^15.8.0",
     "husky": "^9.1.1",
     "lint-staged": "^15.2.7",
-    "prettier-eslint-cli": "^8.0.1"
+    "prettier": "^3.3.3",
+    "typescript-eslint": "^7.17.0"
   },
   "engines": {
     "pnpm": ">= 9.6.0",
