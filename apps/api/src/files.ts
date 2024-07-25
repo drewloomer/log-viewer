@@ -1,13 +1,12 @@
 import { readdir, stat } from 'node:fs/promises';
 import { parse, join } from 'node:path';
+import { LOG_PATH } from './consts.js';
 
 export type File = {
   name: string;
   path: string;
   size: number;
 };
-
-const LOG_PATH = '/var/log';
 
 export const getFiles = async () => {
   const files = await readdir(LOG_PATH, { recursive: true });

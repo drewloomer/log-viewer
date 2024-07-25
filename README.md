@@ -34,9 +34,27 @@ Get a list of logs for a given `fileName`(s).
 | `offset`    | Return `limit` logs starting at `n`.                         | `false`   |
 | `limit`     | How many logs to return. Defaults to `1000`. Max of `10000`. | `false`   |
 
+```ts
+[{
+  host: string;
+  message: string;
+  process: number;
+  timestamp: string; // ISO
+  user: string;
+}]
+```
+
 #### `GET /files`
 
 Get a list of file names in `/var/logs` that can be queried.
+
+```ts
+[{
+  name: string;
+  path: string;
+  size: number; // In bytes
+}]
+```
 
 ### `ui`
 
@@ -44,7 +62,8 @@ A simple React app for viewing log files, allowing those logs to be filtered by 
 
 ## Todo
 
-- [ ] Generate mock logs
+- [x] Generate mock logs
+- [x] Return a list of valid log files
 - [ ] Return log contents by `fileName`
 - [ ] Handle no file found
 - [ ] Return logs contents by comma-separated `fileName` values
