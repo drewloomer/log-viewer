@@ -4,8 +4,11 @@ import { createWriteStream } from 'node:fs';
 import { resolve } from 'node:path';
 
 const OUT_DIR = 'dist';
-const FILE_COUNT = process.argv[2] || 5;
-const MAX_FILE_SIZE = 1e9; // 1GB
+const FILES: [string, number][] = [
+  ['small', 10],
+  ['medium', 100],
+  ['large', 1000],
+];
 
 const setupOutDir = async () => {
   console.log(`Cleaning ${OUT_DIR} directory...`);
@@ -17,54 +20,61 @@ const generateLog = (time: Date) => {
   return `${time.toISOString()} ${faker.internet.ip()} ${faker.lorem.word()}[${faker.number.int({ min: 1000, max: 100000 })}]: ${faker.lorem.paragraph()} \n`;
 };
 
-const generateFile = async () => {
-  const fileName = resolve(OUT_DIR, faker.system.commonFileName('log'));
-  console.log(`🪶 Generating ${fileName}...`);
+const generateFile = async ([name, size]: [string, number]) =>
+  new Promise<void>((res, rej) => {
+    const fileName = resolve(OUT_DIR, `${name}.log`);
+    const fileSize = size * 1024 * 1024;
+    console.log(`🪶 Generating ${fileName}...`);
 
-  const fileStream = createWriteStream(resolve(OUT_DIR, fileName));
+    const fileStream = createWriteStream(resolve(OUT_DIR, fileName));
 
-  let lastTime = faker.date.recent();
-  let currentSize = 0;
-  let index = 0;
+    let lastTime = faker.date.recent();
+    let currentSize = 0;
 
-  function writeNext() {
-    while (index < 10000000000) {
-      lastTime = new Date(
-        lastTime.getTime() - faker.number.int({ min: 10, max: 1000 }),
-      );
-      const line = generateLog(lastTime);
-      const lineSize = Buffer.byteLength(line);
+    const writeNext = () => {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        // Logs need to be in descending order, so we subtract a random number of milliseconds
+        lastTime = new Date(
+          lastTime.getTime() - faker.number.int({ min: 10, max: 1000 }),
+        );
 
-      if (currentSize + lineSize > MAX_FILE_SIZE) {
-        break;
+        const line = generateLog(lastTime);
+        const lineSize = Buffer.byteLength(line);
+
+        // If the next line would exceed the file size, stop writing
+        if (currentSize + lineSize > fileSize) {
+          fileStream.end(() => {
+            console.log(`🪄 Generated ${fileName}!`);
+            res();
+          });
+          break;
+        }
+
+        currentSize += lineSize;
+        const canWrite = fileStream.write(line);
+
+        // If the stream is full, wait for the drain event before writing more
+        if (!canWrite) {
+          fileStream.once('drain', writeNext);
+          return;
+        }
       }
+    };
 
-      currentSize += lineSize;
-      const canWrite = fileStream.write(line);
+    writeNext();
 
-      if (!canWrite) {
-        fileStream.once('drain', writeNext);
-        return;
-      }
-
-      index++;
-    }
-
-    fileStream.end(() => {
-      console.log(`🪄 Generated ${fileName}!`);
+    fileStream.on('error', (err) => {
+      console.error(`🚨 Error writing to ${fileName}:`, err);
+      rej(err);
     });
-  }
-
-  writeNext();
-
-  fileStream.on('error', (err) => {
-    console.error(`🚨 Error writing to ${fileName}:`, err);
   });
-};
 
 const generateFiles = async () => {
-  console.log(`Generating ${FILE_COUNT} files... This could take a few minutes. ☕️`);
-  await Promise.all(new Array(FILE_COUNT).fill('').map(generateFile));
+  console.log(
+    `Generating ${FILES.length} files... This could take a few minutes. ☕️`,
+  );
+  await Promise.all(FILES.map(generateFile));
 };
 
 await setupOutDir();
