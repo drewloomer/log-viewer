@@ -1,0 +1,24 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "swc ./src -d dist -s",
+    "dev": "npm-run-all -s build -p dev:run dev:build",
+    "dev:build": "pnpm build -w",
+    "dev:run": "node --watch dist/src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "pnpm": ">= 9.6.0",
+    "node": ">= 20.15.1"
+  },
+  "volta": {
+    "node": "20.15.1",
+    "pnpm": "9.6.0"
+  }
+}
