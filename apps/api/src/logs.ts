@@ -50,6 +50,21 @@ export type Log = {
   timestamp?: string;
 };
 
+export type LogState = {
+  /**
+   * The cursor for the current log line.
+   */
+  current: number;
+  /**
+   * The max number of logs to yield.
+   */
+  limit: number;
+  /**
+   * An offset to start reading logs from.
+   */
+  offset: number;
+};
+
 const iso8601Regex = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)/;
 const dateWithOffsetRegex =
   /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?[+-]\d{2}:?\d{2})/;
@@ -105,14 +120,50 @@ const parseSyslog = (log: string, defaultYear?: number): Log => {
 };
 
 /**
- * Create a transform stream that parses syslog lines into JSON.
+ * Create a transform stream that parses syslog lines into an array of objects.
  * Also, add the year to the timestamp if it's missing.
  */
-const createJsonTransform = (stats: Stats) =>
+const createLogTransform = ({
+  abort,
+  state,
+  stats,
+}: {
+  abort: AbortController;
+  state: LogState;
+  stats: Stats;
+}) =>
   new Transform({
+    readableObjectMode: true,
+    writableObjectMode: true,
     transform(chunk, _encoding, callback) {
-      const lines: string = chunk.toString().split('\n');
+      let lines: string = chunk.toString().split('\n');
       const logs: Log[] = [];
+
+      // If we're not at the offset yet...
+      if (state.current < state.offset) {
+        // But taking _some_ of these logs will get us there...
+        // Ex. if we're at 0, and the offset is 100, and we have 300 lines,
+        // then we want to take lines 101-300.
+        if (state.current + lines.length >= state.offset) {
+          const overrun = state.current + lines.length - state.offset;
+          state.current = state.offset;
+          lines = lines.slice(lines.length - overrun);
+        } else {
+          state.current += lines.length;
+          return;
+        }
+      }
+
+      state.current += lines.length;
+
+      // Stop processing if we've reached the limit
+      if (state.limit && state.current > state.limit + state.offset) {
+        lines = lines.slice(
+          0,
+          state.limit + state.offset - (state.current - lines.length),
+        );
+        abort.abort('test');
+      }
 
       for (const line of lines) {
         try {
@@ -125,26 +176,72 @@ const createJsonTransform = (stats: Stats) =>
         }
       }
 
-      callback(null, JSON.stringify(logs));
+      callback(null, logs);
+    },
+  });
+
+/**
+ * Create a transform that casts an array of objects to a JSON string.
+ */
+const createJsonTransform = ({ state }: { state: LogState }) =>
+  new Transform({
+    readableObjectMode: true,
+    writableObjectMode: true,
+    transform(chunk, _encoding, callback) {
+      const logs: Log[] = chunk as Log[];
+      const from = state.offset;
+      const to = state.offset + logs.length;
+      const next = logs.length < state.limit ? null : to + 1;
+
+      callback(
+        null,
+        `${JSON.stringify({
+          data: logs,
+          meta: {
+            from,
+            next,
+            to,
+          },
+        })}\n`,
+      );
     },
   });
 
 /**
  * Pipe logs from the given handles to the response, transforming them
  * to JSON along the way.
+ * @todo: use merge-streams (an external library!) to pipe multiple streams
+ * together, so we combine multiple log files into one stream and read
+ * them in parallel, applying limit and offset to them. This current implementation
+ * will read them serially, so if the first file has more than the limit, we'll
+ * never see something from the second file.
  */
-export const pipeLogs = async (handles: FileHandle[], res: Response) => {
+export const pipeLogs = async (
+  handles: FileHandle[],
+  res: Response,
+  { limit = 1000, offset = 0 }: Partial<Omit<LogState, 'current'>>,
+) => {
+  // An abort controller to allow us to cancel the pipeline
+  const abort = new AbortController();
+
+  // Create state to pass to the transform streams
+  const state: LogState = { current: 0, limit, offset };
+
   for (const handle of handles) {
     try {
       await pipeline(
         handle.createReadStream(),
-        createJsonTransform(await handle.stat()),
+        createLogTransform({ abort, state, stats: await handle.stat() }),
+        createJsonTransform({ state }),
         res,
+        { signal: abort.signal },
       );
     } catch (err) {
+      // if ((err as Error)?.name === 'AbortError') {
+      //   break;
+      // }
       console.error('Pipeline failed', err);
       res.status(500).send('Internal Server Error');
-      return;
     }
   }
 

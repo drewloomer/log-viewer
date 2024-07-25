@@ -27,7 +27,7 @@ Get a list of logs for a given `fileName`(s).
 
 | Query Param | Accepted Values                                              | Required? |
 | ----------- | ------------------------------------------------------------ | --------- |
-| `fileName`  | A comma-separated list of log files to query.                | `true`    |
+| `fileName`  | A file to query for logs.                                    | `true`    |
 | `from`      | A start date as an ISO datetime string.                      | `false`   |
 | `to`        | An end as an ISO datetime string.                            | `false`   |
 | `search`    | A query string to search for within logs.                    | `false`   |
@@ -35,13 +35,20 @@ Get a list of logs for a given `fileName`(s).
 | `limit`     | How many logs to return. Defaults to `1000`. Max of `10000`. | `false`   |
 
 ```ts
-[{
-  host: string;
-  message: string;
-  process: number;
-  timestamp: string; // ISO
-  user: string;
-}]
+{
+  data: [{
+    host: string;
+    message: string;
+    pid: string;
+    process: number;
+    timestamp: string; // ISO
+  }],
+  meta: {
+    from: number;
+    next: number;
+    to: number;
+  }
+}
 ```
 
 #### `GET /files`
@@ -49,11 +56,13 @@ Get a list of logs for a given `fileName`(s).
 Get a list of file names in `/var/logs` that can be queried.
 
 ```ts
-[{
-  name: string;
-  path: string;
-  size: number; // In bytes
-}]
+{
+  data: [{
+    name: string;
+    path: string;
+    size: number; // In bytes
+  }]
+}
 ```
 
 ### `ui`
@@ -64,10 +73,10 @@ A simple React app for viewing log files, allowing those logs to be filtered by 
 
 - [x] Generate mock logs
 - [x] Return a list of valid log files
-- [ ] Return log contents by `fileName`
-- [ ] Handle no file found
-- [ ] Return logs contents by comma-separated `fileName` values
-- [ ] Break syslog entry into object for return
+- [x] Return log contents by `fileName`
+- [x] Handle no file found
+- [x] Return logs contents by comma-separated `fileName` values
+- [x] Break syslog entry into object for return
 - [ ] Allow for `offset`
 - [ ] Allow for variable `limit`
 - [ ] Filter logs by `search`
