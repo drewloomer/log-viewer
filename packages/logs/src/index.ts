@@ -34,9 +34,9 @@ const generateFile = async ([name, size]: [string, number]) =>
     const writeNext = () => {
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        // Logs need to be in descending order, so we subtract a random number of milliseconds
+        // Logs need to be in descending order, so we add a random number of milliseconds to each line
         lastTime = new Date(
-          lastTime.getTime() - faker.number.int({ min: 10, max: 1000 }),
+          lastTime.getTime() + faker.number.int({ min: 10, max: 1000 }),
         );
 
         const line = generateLog(lastTime);
@@ -77,5 +77,21 @@ const generateFiles = async () => {
   await Promise.all(FILES.map(generateFile));
 };
 
+const generateNumberList = async () => {
+  console.log(
+    'Generating number list for easier testing of finding by range...',
+  );
+  const fileName = resolve(OUT_DIR, 'numbers.txt');
+  const fileStream = createWriteStream(resolve(OUT_DIR, fileName));
+  for (let i = 0; i < 5000; i++) {
+    const canWrite = fileStream.write(`${i}\n`);
+    if (!canWrite) {
+      await new Promise((res) => fileStream.once('drain', res));
+    }
+  }
+  fileStream.end();
+};
+
 await setupOutDir();
+await generateNumberList();
 await generateFiles();

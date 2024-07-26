@@ -1,46 +1,12 @@
 import { type Response } from 'express';
-import { type FileHandle, open } from 'node:fs/promises';
-import { pipeline } from 'node:stream/promises';
+import { spawn } from 'node:child_process';
+import { type Stats } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { getFiles } from './files.js';
+import { PassThrough, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+
 import { LOG_PATH } from './consts.js';
-import { Transform } from 'node:stream';
-import { Stats } from 'node:fs';
-
-/**
- * Get a handle for each file, or log an error if it can't be opened.
- * @todo: instead of eating a not found/allowed error we should inform
- * the user that the file couldn't be opened for whatever reason.
- */
-export const getLogHandles = async ({ fileName }: { fileName: string }) => {
-  const files = await getFiles();
-  const fileNames = fileName.split(',');
-
-  if (!fileNames.length) {
-    return;
-  }
-
-  const handles: FileHandle[] = [];
-
-  for (const name of fileNames) {
-    const path = join(LOG_PATH, `${name}`);
-
-    try {
-      const handle = await open(path, 'r');
-
-      // Don't allow access to files that aren't in the list
-      if (!files.find((file) => file.path === path)) {
-        throw new Error(`👮 Access to ${name} not allowed!`);
-      }
-
-      handles.push(handle);
-    } catch (e) {
-      console.error(`🚨 Couldn't open file ${name}!`, e);
-    }
-  }
-
-  return handles;
-};
 
 export type Log = {
   host?: string;
@@ -51,10 +17,6 @@ export type Log = {
 };
 
 export type LogState = {
-  /**
-   * The cursor for the current log line.
-   */
-  current: number;
   /**
    * The max number of logs to yield.
    */
@@ -120,50 +82,31 @@ const parseSyslog = (log: string, defaultYear?: number): Log => {
 };
 
 /**
+ * Await a shell command and return the output as a string.
+ */
+const run = async (...cmd: [string, Parameters<typeof spawn>[1]]) =>
+  new Promise<string>((res, rej) => {
+    const proc = spawn(...cmd);
+    let result = '';
+    proc.stdout?.on('data', function (data) {
+      result += data.toString();
+    });
+    proc.on('error', (err) => rej(err));
+    proc.on('close', function () {
+      return res(result);
+    });
+  });
+
+/**
  * Create a transform stream that parses syslog lines into an array of objects.
  * Also, add the year to the timestamp if it's missing.
  */
-const createLogTransform = ({
-  abort,
-  state,
-  stats,
-}: {
-  abort: AbortController;
-  state: LogState;
-  stats: Stats;
-}) =>
+const createLogTransform = ({ stats }: { stats: Stats }) =>
   new Transform({
-    readableObjectMode: true,
-    writableObjectMode: true,
+    objectMode: true,
     transform(chunk, _encoding, callback) {
-      let lines: string = chunk.toString().split('\n');
+      const lines: string = chunk.toString().trim().split('\n');
       const logs: Log[] = [];
-
-      // If we're not at the offset yet...
-      if (state.current < state.offset) {
-        // But taking _some_ of these logs will get us there...
-        // Ex. if we're at 0, and the offset is 100, and we have 300 lines,
-        // then we want to take lines 101-300.
-        if (state.current + lines.length >= state.offset) {
-          const overrun = state.current + lines.length - state.offset;
-          state.current = state.offset;
-          lines = lines.slice(lines.length - overrun);
-        } else {
-          state.current += lines.length;
-          return;
-        }
-      }
-
-      state.current += lines.length;
-
-      // Stop processing if we've reached the limit
-      if (state.limit && state.current > state.limit + state.offset) {
-        lines = lines.slice(
-          0,
-          state.limit + state.offset - (state.current - lines.length),
-        );
-        abort.abort('test');
-      }
 
       for (const line of lines) {
         try {
@@ -183,20 +126,24 @@ const createLogTransform = ({
 /**
  * Create a transform that casts an array of objects to a JSON string.
  */
-const createJsonTransform = ({ state }: { state: LogState }) =>
+const createJsonTransform = ({
+  from,
+  next,
+  to,
+}: {
+  from: number;
+  next: number | null;
+  to: number;
+}) =>
   new Transform({
-    readableObjectMode: true,
-    writableObjectMode: true,
+    objectMode: true,
     transform(chunk, _encoding, callback) {
       const logs: Log[] = chunk as Log[];
-      const from = state.offset;
-      const to = state.offset + logs.length;
-      const next = logs.length < state.limit ? null : to + 1;
 
       callback(
         null,
         `${JSON.stringify({
-          data: logs,
+          data: logs.reverse(),
           meta: {
             from,
             next,
@@ -208,44 +155,81 @@ const createJsonTransform = ({ state }: { state: LogState }) =>
   });
 
 /**
- * Pipe logs from the given handles to the response, transforming them
+ * Pipe logs from the given files to the response, transforming them
  * to JSON along the way.
- * @todo: use merge-streams (an external library!) to pipe multiple streams
- * together, so we combine multiple log files into one stream and read
- * them in parallel, applying limit and offset to them. This current implementation
- * will read them serially, so if the first file has more than the limit, we'll
- * never see something from the second file.
  */
 export const pipeLogs = async (
-  handles: FileHandle[],
+  fileName: string,
   res: Response,
   { limit = 1000, offset = 0 }: Partial<Omit<LogState, 'current'>>,
 ) => {
-  // An abort controller to allow us to cancel the pipeline
-  const abort = new AbortController();
+  const fileNames = fileName.split(',');
 
-  // Create state to pass to the transform streams
-  const state: LogState = { current: 0, limit, offset };
+  // Don't allow more than 1000 lines to be returned in one call
+  limit = Math.min(limit, 1000);
 
-  for (const handle of handles) {
+  // Loop through each file and pipe logs to the response
+  for (const file of fileNames) {
     try {
-      await pipeline(
-        handle.createReadStream(),
-        createLogTransform({ abort, state, stats: await handle.stat() }),
-        createJsonTransform({ state }),
-        res,
-        { signal: abort.signal },
-      );
+      // Get the full path of the log file since we don't
+      // make users pass "/var/log"
+      const path = join(LOG_PATH, file);
+
+      // Get details about the file
+      const stats = await stat(path);
+      const lineCount = parseInt(await run('wc', ['-l', path]), 10);
+
+      // Gather all the results into a single stream
+      // Allow for up to 1000 items to be buffered
+      const data = new PassThrough({ objectMode: true, highWaterMark: 1000 });
+
+      // Metadata for pagination
+      const from = offset;
+      let to: number;
+      let next: number | null = null;
+
+      // If the requested offset starts beyond the total number of lines...
+      if (offset > lineCount) {
+        // Return an empty array
+        data.push([]);
+        data.end();
+
+        // Update meta to reflect no results
+        to = from;
+        next = null;
+      } else {
+        const tailUntil = limit + offset;
+        const headUntil = Math.min(limit, lineCount - offset + 1);
+
+        // Get lines from the log file
+        const process = spawn('sh', [
+          '-c',
+          `tail -q -n ${tailUntil} ${join(LOG_PATH, file)} | head -n ${headUntil}`,
+        ]);
+
+        // Parse log entries from the tail stream
+        await pipeline(
+          process.stdout,
+          createLogTransform({
+            stats,
+          }),
+          data,
+        );
+
+        // Close the spawned process
+        process.kill();
+
+        // Update meta to reflect the actual number of results
+        to = tailUntil - 1;
+        next = to + headUntil > lineCount ? null : to + headUntil;
+      }
+
+      // Add pagination data to the JSON response and
+      // pass it to the response stream
+      await pipeline(data, createJsonTransform({ from, next, to }), res);
     } catch (err) {
-      // if ((err as Error)?.name === 'AbortError') {
-      //   break;
-      // }
       console.error('Pipeline failed', err);
       res.status(500).send('Internal Server Error');
     }
   }
-
-  handles.forEach((handle) => handle.close());
-
-  res.end();
 };

@@ -28,8 +28,6 @@ Get a list of logs for a given `fileName`(s).
 | Query Param | Accepted Values                                              | Required? |
 | ----------- | ------------------------------------------------------------ | --------- |
 | `fileName`  | A file to query for logs.                                    | `true`    |
-| `from`      | A start date as an ISO datetime string.                      | `false`   |
-| `to`        | An end as an ISO datetime string.                            | `false`   |
 | `search`    | A query string to search for within logs.                    | `false`   |
 | `offset`    | Return `limit` logs starting at `n`.                         | `false`   |
 | `limit`     | How many logs to return. Defaults to `1000`. Max of `10000`. | `false`   |
@@ -85,8 +83,6 @@ A simple React app for viewing log files, allowing those logs to be filtered by 
 - [ ] Query `GET /logs` on page load
 - [ ] Add search box
 - [ ] Re-query `GET /logs` when filters change
-- [ ] Add start date
-- [ ] Add end date
 - [ ] Add back/forward pagination
 - [ ] Spin up multiple APIs with different mock logs
 - [ ] Query logs from multiple APIs through a single primary
