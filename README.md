@@ -42,8 +42,9 @@ Get a list of logs for a given `fileName`(s).
     timestamp: string; // ISO
   }],
   meta: {
+    count: number;
     from: number;
-    next: number;
+    next: number | null;
     to: number;
   }
 }

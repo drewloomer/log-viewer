@@ -25,6 +25,10 @@ export type LogState = {
    * An offset to start reading logs from.
    */
   offset: number;
+  /**
+   * An optional search query to filter logs by.
+   */
+  search?: string;
 };
 
 const iso8601Regex = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)/;
@@ -98,6 +102,38 @@ const run = async (...cmd: [string, Parameters<typeof spawn>[1]]) =>
   });
 
 /**
+ * A Transform stream that buffers chunks until they form complete lines.
+ * Useful so that if a chunk ends mid-line, we don't accidentally parse it.
+ */
+const createLineBuffer = () => {
+  let buffer: string | undefined = '';
+  return new Transform({
+    objectMode: true,
+    transform(chunk, _encoding, callback) {
+      // Add the chunk to the buffer and split it into lines
+      buffer += chunk.toString();
+      const lines = buffer?.split('\n') ?? [];
+
+      // Keep the last partial line in the buffer
+      buffer = lines.pop();
+
+      // Push each line to the stream
+      lines.forEach((line) => this.push(line));
+
+      callback();
+    },
+    flush(callback) {
+      // If there is a partial line left at the end, push it to the buffer
+      if (buffer) {
+        this.push(buffer);
+        buffer = '';
+      }
+      callback();
+    },
+  });
+};
+
+/**
  * Create a transform stream that parses syslog lines into an array of objects.
  * Also, add the year to the timestamp if it's missing.
  */
@@ -105,6 +141,7 @@ const createLogTransform = ({ stats }: { stats: Stats }) =>
   new Transform({
     objectMode: true,
     transform(chunk, _encoding, callback) {
+      console.log('chunk', chunk);
       const lines: string = chunk.toString().trim().split('\n');
       const logs: Log[] = [];
 
@@ -126,34 +163,26 @@ const createLogTransform = ({ stats }: { stats: Stats }) =>
 /**
  * Create a transform that casts an array of objects to a JSON string.
  */
-const createJsonTransform = ({
+const createResponseBody = ({
   from,
+  logs,
   next,
   to,
 }: {
   from: number;
+  logs: Log[];
   next: number | null;
   to: number;
 }) =>
-  new Transform({
-    objectMode: true,
-    transform(chunk, _encoding, callback) {
-      const logs: Log[] = chunk as Log[];
-
-      callback(
-        null,
-        `${JSON.stringify({
-          data: logs.reverse(),
-          meta: {
-            from,
-            next,
-            to,
-          },
-        })}\n`,
-      );
+  `${JSON.stringify({
+    data: logs.reverse(),
+    meta: {
+      count: logs.length,
+      from,
+      next,
+      to,
     },
-  });
-
+  })}\n`;
 /**
  * Pipe logs from the given files to the response, transforming them
  * to JSON along the way.
@@ -161,7 +190,7 @@ const createJsonTransform = ({
 export const pipeLogs = async (
   fileName: string,
   res: Response,
-  { limit = 1000, offset = 0 }: Partial<Omit<LogState, 'current'>>,
+  { limit = 1000, offset = 0, search }: Partial<Omit<LogState, 'current'>>,
 ) => {
   const fileNames = fileName.split(',');
 
@@ -201,32 +230,35 @@ export const pipeLogs = async (
         const tailUntil = limit + offset;
         const headUntil = Math.min(limit, lineCount - offset + 1);
 
+        // If a query string is provided, grep against it
+        const grepCommand = search ? `grep '${search}'` : 'cat';
+
         // Get lines from the log file
         const process = spawn('sh', [
           '-c',
-          `tail -q -n ${tailUntil} ${join(LOG_PATH, file)} | head -n ${headUntil}`,
+          `tail -q -n ${tailUntil} ${join(LOG_PATH, file)} | ${grepCommand} | head -n ${headUntil}`,
         ]);
 
         // Parse log entries from the tail stream
         await pipeline(
           process.stdout,
+          createLineBuffer(),
           createLogTransform({
             stats,
           }),
           data,
         );
 
-        // Close the spawned process
-        process.kill();
-
         // Update meta to reflect the actual number of results
         to = tailUntil - 1;
-        next = to + headUntil > lineCount ? null : to + headUntil;
+        next = to + headUntil > lineCount ? null : to + 1;
       }
 
+      const logs = (await data.toArray()).flat().filter((v) => !!v);
+
       // Add pagination data to the JSON response and
-      // pass it to the response stream
-      await pipeline(data, createJsonTransform({ from, next, to }), res);
+      // pipe it to the response stream
+      res.status(200).send(createResponseBody({ from, logs, next, to }));
     } catch (err) {
       console.error('Pipeline failed', err);
       res.status(500).send('Internal Server Error');

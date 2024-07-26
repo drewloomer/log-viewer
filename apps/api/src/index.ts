@@ -15,9 +15,9 @@ app.get<
   null,
   string,
   null,
-  { fileName: string; limit: string; offset: string }
+  { fileName: string; limit?: string; offset?: string; search?: string }
 >('/logs', async (req, res) => {
-  const { fileName } = req.query;
+  const { fileName, search } = req.query;
   const limit = req.query.limit ? parseInt(req.query.limit, 10) : 1000;
   const offset = req.query.offset ? parseInt(req.query.offset, 10) : 0;
 
@@ -28,7 +28,7 @@ app.get<
   // }
 
   res.setHeader('Content-Type', 'application/json');
-  await pipeLogs(fileName, res, { limit, offset });
+  await pipeLogs(fileName, res, { limit, offset, search });
 });
 
 app.listen(port, () => {
