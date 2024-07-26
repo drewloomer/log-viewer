@@ -9,6 +9,7 @@ Either install `pnpm` or `volta` locally first. Then, install dependencies and s
 ```sh
 pnpm i
 pnpm dev
+# @todo: notes on copying test files to /var/logs
 ```
 
 ## Architecture
@@ -76,10 +77,9 @@ A simple React app for viewing log files, allowing those logs to be filtered by 
 - [x] Handle no file found
 - [x] Return logs contents by comma-separated `fileName` values
 - [x] Break syslog entry into object for return
-- [ ] Allow for `offset`
-- [ ] Allow for variable `limit`
-- [ ] Filter logs by `search`
-- [ ] Filter logs by `from` and `to`
+- [x] Allow for `offset`
+- [x] Allow for variable `limit`
+- [x] Filter logs by `search`
 - [ ] Scaffold UI
 - [ ] Query `GET /logs` on page load
 - [ ] Add search box

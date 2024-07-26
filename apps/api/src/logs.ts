@@ -141,7 +141,6 @@ const createLogTransform = ({ stats }: { stats: Stats }) =>
   new Transform({
     objectMode: true,
     transform(chunk, _encoding, callback) {
-      console.log('chunk', chunk);
       const lines: string = chunk.toString().trim().split('\n');
       const logs: Log[] = [];
 
@@ -183,6 +182,7 @@ const createResponseBody = ({
       to,
     },
   })}\n`;
+
 /**
  * Pipe logs from the given files to the response, transforming them
  * to JSON along the way.
