@@ -1,12 +1,7 @@
 import { readdir, stat } from 'node:fs/promises';
 import { parse, join } from 'node:path';
 import { LOG_PATH } from './consts.js';
-
-export type File = {
-  name: string;
-  path: string;
-  size: number;
-};
+import type { File } from './models.js';
 
 export const getFiles = async () => {
   const files = await readdir(LOG_PATH, { recursive: true });
@@ -18,14 +13,19 @@ export const getFiles = async () => {
 
     // Only deal with log files, not other formats
     if (ext === '.log') {
-      const { size } = await stat(path);
+      const stats = await stat(path);
       validFiles.push({
         name,
         path,
-        size,
+        stats,
       });
     }
   }
 
-  return validFiles;
+  return validFiles.sort((a, b) => (b.path > a.path ? -1 : 1));
+};
+
+export const getFile = async (fileName: string) => {
+  const files = await getFiles();
+  return files.find(({ name }) => name === fileName);
 };

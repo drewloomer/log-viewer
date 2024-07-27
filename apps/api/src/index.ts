@@ -1,13 +1,23 @@
 import express from 'express';
+import cors from 'cors';
 import { getFiles } from './files.js';
 import { pipeLogs } from './logs.js';
+import type { File, ApiResponse } from './models.js';
 
 const app = express();
 const port = 3000;
 
+// 🤫
+app.use(cors());
+
 // Get a list of log files
 app.get('/files', async (_req, res) => {
-  res.send(await getFiles());
+  const data = await getFiles();
+  const response: ApiResponse<File[]> = {
+    data,
+    meta: { count: data.length },
+  };
+  res.send(response);
 });
 
 // Get logs
@@ -20,14 +30,6 @@ app.get<
   const { fileName, search } = req.query;
   const limit = req.query.limit ? parseInt(req.query.limit, 10) : 1000;
   const offset = req.query.offset ? parseInt(req.query.offset, 10) : 0;
-
-  // if (!processes?.length) {
-  //   res.setHeader('Content-Type', 'text/plain');
-  //   res.status(404);
-  //   return res.send('Log(s) not found');
-  // }
-
-  res.setHeader('Content-Type', 'application/json');
   await pipeLogs(fileName, res, { limit, offset, search });
 });
 

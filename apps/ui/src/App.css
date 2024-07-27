@@ -1,42 +1,77 @@
 #root {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  padding: 1rem;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+h1 {
+  margin: 1rem 0;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+button {
+  background-color: #666;
+  border: none;
+  border-radius: 0.25rem;
+  padding: 0.5rem 1rem;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+button:hover {
+  background-color: #555;
+  cursor: pointer;
 }
 
-.card {
-  padding: 2em;
+button:active {
+  background-color: #444;
 }
 
-.read-the-docs {
-  color: #888;
+/* Please excuse this old school styling approach! */
+.logfile {
+  background-color: #141414;
+  border-radius: 0.25rem;
+  border: 1px solid #ccc;
+  margin: 1rem 0;
+  padding: 0.5rem;
+}
+
+.logs__log {
+  padding: 0.5rem;
+}
+
+.logs__log:nth-child(even) {
+  background-color: #333;
+}
+
+.logs__timestamp {
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.logs__message {
+  font-family: monospace;
+  font-size: 0.75rem;
+}
+
+.logs__process {
+  font-size: 0.5rem;
+}
+
+.filepicker {
+  margin: 1rem 0;
+}
+
+.filepicker__select {
+  padding: 0.5rem;
+  width: 20rem;
+}
+
+.filepicker__search {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.5rem 0.5rem 0 0;
+  width: 20rem;
+}
+
+.filepicker__search-input {
+  padding: 0.3755rem;
+  flex: 1;
 }

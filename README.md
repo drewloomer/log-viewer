@@ -44,9 +44,9 @@ Get a list of logs for a given `fileName`(s).
   }],
   meta: {
     count: number;
-    from: number;
-    next: number | null;
-    to: number;
+    from: number | undefined;
+    next: number | undefined;
+    to: number | undefined;
   }
 }
 ```
@@ -60,7 +60,7 @@ Get a list of file names in `/var/logs` that can be queried.
   data: [{
     name: string;
     path: string;
-    size: number; // In bytes
+    stats: Stats;
   }]
 }
 ```
@@ -80,13 +80,11 @@ A simple React app for viewing log files, allowing those logs to be filtered by 
 - [x] Allow for `offset`
 - [x] Allow for variable `limit`
 - [x] Filter logs by `search`
-- [ ] Scaffold UI
-- [ ] Query `GET /logs` on page load
-- [ ] Add search box
-- [ ] Re-query `GET /logs` when filters change
-- [ ] Add back/forward pagination
-- [ ] Spin up multiple APIs with different mock logs
-- [ ] Query logs from multiple APIs through a single primary
+- [x] Scaffold UI
+- [x] Query `GET /logs` on page load
+- [x] Add search box
+- [x] Re-query `GET /logs` when filters change
+- [x] Add forward pagination
 
 ## Problem statement
 

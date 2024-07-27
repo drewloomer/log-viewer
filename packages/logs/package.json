@@ -7,7 +7,6 @@
     "build": "node --import @swc-node/register/esm-register ./src/index.ts",
     "cleanup": "sudo rm /var/log/large.log /var/log/medium.log /var/log/small.log",
     "copy": "sudo cp dist/* /var/log",
-    "dev": "nodemon",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

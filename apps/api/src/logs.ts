@@ -1,22 +1,15 @@
 import { type Response } from 'express';
 import { spawn } from 'node:child_process';
 import { type Stats } from 'node:fs';
-import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PassThrough, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import { LOG_PATH } from './consts.js';
+import { getFile } from './files.js';
+import { ApiResponse, Log } from './models.js';
 
-export type Log = {
-  host?: string;
-  message: string;
-  pid?: number;
-  process?: string;
-  timestamp?: string;
-};
-
-export type LogState = {
+type LogState = {
   /**
    * The max number of logs to yield.
    */
@@ -163,17 +156,19 @@ const createLogTransform = ({ stats }: { stats: Stats }) =>
  * Create a transform that casts an array of objects to a JSON string.
  */
 const createResponseBody = ({
-  from,
+  hasMore,
   logs,
-  next,
-  to,
+  offset,
 }: {
-  from: number;
+  hasMore: boolean;
   logs: Log[];
-  next: number | null;
-  to: number;
-}) =>
-  `${JSON.stringify({
+  offset: number;
+}): ApiResponse<Log[]> => {
+  // Update meta to reflect the actual number of results
+  const to = offset + logs.length - 1;
+  const from = offset;
+  const next = hasMore ? to + 1 : undefined;
+  return {
     data: logs.reverse(),
     meta: {
       count: logs.length,
@@ -181,7 +176,8 @@ const createResponseBody = ({
       next,
       to,
     },
-  })}\n`;
+  };
+};
 
 /**
  * Pipe logs from the given files to the response, transforming them
@@ -200,44 +196,49 @@ export const pipeLogs = async (
   // Loop through each file and pipe logs to the response
   for (const file of fileNames) {
     try {
-      // Get the full path of the log file since we don't
-      // make users pass "/var/log"
-      const path = join(LOG_PATH, file);
+      // Make sure the requested log file exists
+      const matchingFile = await getFile(file);
+
+      if (!matchingFile) {
+        res.setHeader('Content-Type', 'text/plain');
+        res.status(404);
+        return res.send(`No logs found for ${fileName}!`);
+      }
+
+      const { path, stats } = matchingFile;
 
       // Get details about the file
-      const stats = await stat(path);
       const lineCount = parseInt(await run('wc', ['-l', path]), 10);
 
       // Gather all the results into a single stream
-      // Allow for up to 1000 items to be buffered
-      const data = new PassThrough({ objectMode: true, highWaterMark: 1000 });
+      // @todo: tune this buffer so the highwatermark doesn't have to be so massive
+      const data = new PassThrough({
+        objectMode: true,
+        highWaterMark: 1000000,
+      });
 
-      // Metadata for pagination
-      const from = offset;
-      let to: number;
-      let next: number | null = null;
+      // Track if there will be more results after this
+      let hasMore = false;
 
-      // If the requested offset starts beyond the total number of lines...
+      // If the requested offset starts beyond the total
+      // number of lines, return an empty array
       if (offset > lineCount) {
-        // Return an empty array
         data.push([]);
         data.end();
-
-        // Update meta to reflect no results
-        to = from;
-        next = null;
       } else {
         const tailUntil = limit + offset;
         const headUntil = Math.min(limit, lineCount - offset + 1);
 
         // If a query string is provided, grep against it
-        const grepCommand = search ? `grep '${search}'` : 'cat';
+        const grepCommand = search ? `grep -i '${search}'` : 'cat';
 
         // Get lines from the log file
         const process = spawn('sh', [
           '-c',
           `tail -q -n ${tailUntil} ${join(LOG_PATH, file)} | ${grepCommand} | head -n ${headUntil}`,
         ]);
+
+        hasMore = tailUntil + headUntil - 1 < lineCount;
 
         // Parse log entries from the tail stream
         await pipeline(
@@ -248,17 +249,19 @@ export const pipeLogs = async (
           }),
           data,
         );
-
-        // Update meta to reflect the actual number of results
-        to = tailUntil - 1;
-        next = to + headUntil > lineCount ? null : to + 1;
       }
 
-      const logs = (await data.toArray()).flat().filter((v) => !!v);
+      // Flatten the logs because they're currently chunked
+      // into multiple arrays inside a larger array
+      const logs = (await data.toArray()).flat();
+
+      // If we have fewer logs than the limit, we don't have more
+      hasMore = logs.length >= limit;
 
       // Add pagination data to the JSON response and
       // pipe it to the response stream
-      res.status(200).send(createResponseBody({ from, logs, next, to }));
+      res.setHeader('Content-Type', 'application/json');
+      res.status(200).send(createResponseBody({ hasMore, logs, offset }));
     } catch (err) {
       console.error('Pipeline failed', err);
       res.status(500).send('Internal Server Error');
