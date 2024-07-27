@@ -4,7 +4,7 @@ A simple log viewer HTTP API and UI.
 
 ## Quickstart
 
-Either install `pnpm` or `volta` locally first. Then, install dependencies and start the app:
+Either install `pnpm` or `volta` locally first.
 
 ```sh
 # install all packages
@@ -115,9 +115,50 @@ nodemon
 
 I opted not to implement this because of time, and it seems like it would not only require API work but also a UI that can properly model the added complexity. I know it's not the same, but here is roughly how I'd do it:
 
-- Add an API endpoint to the `primary` API to get a list of `secondaries`
-- When one or more secondaries are selected in the UI,
-- @todo FINISH THIS
+### `agent` app
+
+- Take the existing code in `api` and move it to an `agent` application that would run on each secondary machine
+  - This code already does the basics for reading files and logs on a machine
+- When the `express` server boots, have it phone home to the `api` app to register itself
+  - It should also routinely report its status to the `api` so we can remove secondaries as they go offline
+
+### `api` app
+
+- Add `POST /agent` and `PUT /agent` endpoints for registering and and reporting agent health
+- Update the `GET /files` endpoint to return a schema where files are grouped by the agent they live on
+  - Make requests to each registered agent's `GET /files` endpoint in parallel, merging the results
+  - If a request to an agent fails, mark it as offline and don't query it again until it updates it status
+- Update the `GET /logs` endpoint to accept agent and filenames
+  - Follow a similar parallel request pattern, but interleave the returned logs by their `timestamp`
+  - Add a new field to the `Log` type to include which agent the log came from
+
+### `ui` app
+
+- Add a multi-select of available machines to query against
+- Add the machine name to the log results
+
+## 😞 Other shortcomings
+
+Here are some additional things I'd do if I had more time:
+
+- Testing
+  - Write more unit tests
+    - I wrote a few just to prove I know what I'm doing, but they certainly aren't exhaustive
+    - I've outlined what I would want to test at the unit level in `test.todo` entries
+  - Write integration tests via [`supertest`](https://www.npmjs.com/package/supertest)
+    - These would focus on exercising the REST endpoints of the `api` app
+    - Use the mocked logs to allow these tests to be run consistently on any platform
+  - Write end-to-end tests via [`playwright`](https://www.playwright.dev)
+    - These would be limited and focus on happy path scenarios of data flowing through the whole system
+  - Write component/unit tests for the `ui`
+    - This code is totally untested! 😵‍💫
+    - These would focus on the inputs/outputs of components and how the hooks work
+- Performance
+  - There are _lots_ of opportunities for caching on both the UI and the API
+- Error handling
+  - This code, on both the back and frontends, is not very fault tolerant
+- CI/CD
+  - At least introduce some basic `main` branch protections that require tests to pass
 
 ## Todo
 
