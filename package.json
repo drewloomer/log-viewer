@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "pnpm run --recursive --if-present dev",
+    "dev:pre": "pnpm run --filter logs build && pnpm run --filter logs copy",
+    "dev:post": "pnpm run --filter logs cleanup",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "type": "module",

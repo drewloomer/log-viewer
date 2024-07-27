@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node --import @swc-node/register/esm-register ./src/index.ts",
-    "cleanup": "sudo rm /var/log/large.log /var/log/medium.log /var/log/small.log",
-    "copy": "sudo cp dist/* /var/log",
+    "cleanup": "clear && echo \"🧨 Removing generated logs from /var/log\" && sudo rm /var/log/large.log /var/log/medium.log /var/log/small.log",
+    "copy": "clear && echo \"👯 Copying generated logs to /var/log\" && sudo cp dist/* /var/log",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
